@@ -11,6 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 
 	// use for vendor specific authentication
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -29,38 +31,60 @@ func main() {
 		os.Exit(1)
 	}
 	api := clientset.CoreV1()
+	metricsClientset, err := metricsv.NewForConfig(config)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	list := make(chan string)
+	chList := make(chan string)
+	chErr := make(chan error)
 	go func() {
 		opts := metav1.ListOptions{}
 		nodeList, err := api.Nodes().List(ctx, opts)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			chErr <- err
+			return
 		}
-		list <- listNodes(nodeList)
+		nodeMetricsList, err := metricsClientset.MetricsV1beta1().NodeMetricses().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			chErr <- err
+			return
+		}
+		chList <- listNodes(nodeList, nodeMetricsList)
 	}()
 	go func() {
 		opts := metav1.ListOptions{}
+		namespace := "notifications"
 		// TODO: namespace as arg
-		podList, err := api.Pods("notifications").List(ctx, opts)
+		podList, err := api.Pods(namespace).List(ctx, opts)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			chErr <- err
+			return
 		}
-		list <- listPods(podList)
+		podMetricsList, err := metricsClientset.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			chErr <- err
+			return
+		}
+		chList <- listPods(podList, podMetricsList)
 	}()
 
 	for {
 		select {
-		case out := <-list:
+		case out := <-chList:
 			fmt.Fprint(os.Stdout, out)
+		case err := <-chErr:
+			fmt.Fprintln(os.Stderr, err)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func listNodes(nodeList *v1.NodeList) string {
+func listNodes(nodeList *v1.NodeList, nodeMetricsList *v1beta1.NodeMetricsList) string {
 	nodes := ""
 	for _, node := range nodeList.Items {
 		nodes = nodes + fmt.Sprintln(node.Name, node.Status.NodeInfo.Architecture)
@@ -68,11 +92,17 @@ func listNodes(nodeList *v1.NodeList) string {
 	return nodes
 }
 
-func listPods(podList *v1.PodList) string {
+func listPods(podList *v1.PodList, podMetricsList *v1beta1.PodMetricsList) string {
 	pods := ""
-	pods = pods + fmt.Sprintln("NAME", "HOST PID")
 	for _, pod := range podList.Items {
-		pods = pods + fmt.Sprintln(pod.Name, pod.Spec.HostPID)
+		pods += fmt.Sprintf("%s %s", pod.Name, pod.Spec.NodeName)
+	}
+	for _, podMetric := range podMetricsList.Items {
+		podString := podMetric.GetName()
+		for _, container := range podMetric.Containers {
+			podString = podString + "\n\t" + fmt.Sprintf("%s: %vm %vMi", container.Name, container.Usage.Cpu().MilliValue(), container.Usage.Memory().Value()/(1024*1024))
+		}
+		pods = pods + podString + "\n"
 	}
 	return pods
 }
