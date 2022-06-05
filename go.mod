@@ -9,6 +9,8 @@ require (
 	k8s.io/client-go v0.24.1
 )
 
+require k8s.io/kubectl v0.24.1 // indirect
+
 require (
 	cloud.google.com/go v0.81.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
