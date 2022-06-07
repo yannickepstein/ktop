@@ -1,29 +1,45 @@
 package kapi
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
+	coreV1 "k8s.io/api/core/v1"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 
 	// use for vendor specific authentication
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
-type Client struct {
-	Metrics   *metricsv.Clientset
-	Resources *kubernetes.Clientset
+type client struct {
+	k8Clientset *kubernetes.Clientset
+	metrics     *metricsv.Clientset
 }
 
-func NewClient() (*Client, error) {
-	kubeconfig, err := newKubeconfig()
+func (c client) Pods(ctx context.Context, namespace string) ([]coreV1.Pod, error) {
+	podList, err := c.k8Clientset.CoreV1().Pods(namespace).List(ctx, metaV1.ListOptions{})
 	if err != nil {
-		return nil, err
+		return []coreV1.Pod{}, err
 	}
-	metrics, err := metricsv.NewForConfig(kubeconfig)
+	return podList.Items, nil
+}
+
+func (c client) PodMetrices(ctx context.Context, namespace string) ([]v1beta1.PodMetrics, error) {
+	metricsList, err := c.metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metaV1.ListOptions{})
+	if err != nil {
+		return []v1beta1.PodMetrics{}, err
+	}
+	return metricsList.Items, nil
+}
+
+func NewClient() (*client, error) {
+	kubeconfig, err := newKubeconfig()
 	if err != nil {
 		return nil, err
 	}
@@ -31,9 +47,13 @@ func NewClient() (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{
-		Metrics:   metrics,
-		Resources: clientset,
+	metricsClientset, err := metricsv.NewForConfig(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	return &client{
+		k8Clientset: clientset,
+		metrics:     metricsClientset,
 	}, nil
 }
 

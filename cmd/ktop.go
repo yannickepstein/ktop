@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -10,7 +12,15 @@ import (
 	"golang.org/x/net/context"
 )
 
+var ErrNamespaceMissing = errors.New("namespace missing")
+
 func main() {
+	namespace := flag.String("n", "default", "Namespace")
+	flag.Parse()
+	if namespace == nil {
+		fmt.Fprintln(os.Stderr, ErrNamespaceMissing)
+		os.Exit(1)
+	}
 	client, err := kapi.NewClient()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -18,5 +28,10 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pods.Display(ctx, client)
+	statsTable, err := pods.Stats(client)(ctx, *namespace)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(statsTable)
 }

@@ -9,7 +9,11 @@ require (
 	k8s.io/client-go v0.24.1
 )
 
-require k8s.io/kubectl v0.24.1 // indirect
+require (
+	github.com/mattn/go-runewidth v0.0.12 // indirect
+	github.com/rivo/uniseg v0.1.0 // indirect
+	k8s.io/kubectl v0.24.1 // indirect
+)
 
 require (
 	cloud.google.com/go v0.81.0 // indirect
@@ -19,6 +23,7 @@ require (
 	github.com/Azure/go-autorest/autorest/date v0.3.0 // indirect
 	github.com/Azure/go-autorest/logger v0.2.1 // indirect
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
+	github.com/alexeyco/simpletable v1.0.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.7.5-0.20220308211933-7c971ca4d0fd // indirect
 	github.com/form3tech-oss/jwt-go v3.2.3+incompatible // indirect

@@ -3,58 +3,66 @@ package pods
 import (
 	"context"
 	"fmt"
-	"strings"
-	"sync"
 
-	"github.com/yannickepstein/ktop/pkg/kapi"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreV1 "k8s.io/api/core/v1"
+	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
+
+	"github.com/alexeyco/simpletable"
 )
 
-func Display(ctx context.Context, client *kapi.Client) error {
-	namespaceList, err := client.Resources.CoreV1().Namespaces().List(ctx, v1.ListOptions{})
-	if err != nil {
-		return err
-	}
-	namespaces := namespaceList.Items[0:10]
-	podStats := make(chan []PodStat, len(namespaces))
-	var wg sync.WaitGroup
-	wg.Add(len(namespaces))
-	for _, namespace := range namespaces {
-		go func(nsName string) {
-			defer wg.Done()
-			podList, err := client.Resources.CoreV1().Pods(nsName).List(ctx, v1.ListOptions{})
-			if err != nil {
-				return
-			}
-			podMetricsList, err := client.Metrics.MetricsV1beta1().PodMetricses(nsName).List(ctx, v1.ListOptions{})
-			if err != nil {
-				return
-			}
-			podStats <- extract(podList, podMetricsList)
-		}(namespace.Name)
-	}
-	wg.Wait()
-	fmt.Sprintln("completed wait")
-	for i := 0; i < len(namespaces); i++ {
-		podStats := <-podStats
-		render(podStats)
-	}
-	return nil
+type pod = coreV1.Pod
+type podMetrics = v1beta1.PodMetrics
+
+type client interface {
+	Pods(ctx context.Context, namespace string) ([]pod, error)
+	PodMetrices(ctx context.Context, namespace string) ([]podMetrics, error)
 }
 
-func render(podStats []PodStat) {
-	for _, podStat := range podStats {
-		columns := []string{
-			podStat.Node,
-			podStat.Namespace,
-			podStat.Name,
-			fmt.Sprintf("%dm", podStat.CPURequest),
-			fmt.Sprintf("%dm", podStat.CPULimit),
-			fmt.Sprintf("%dm", podStat.CPUUsage),
-			fmt.Sprintf("%dm", podStat.MemoryRequest),
-			fmt.Sprintf("%dm", podStat.MemoryLimit),
-			fmt.Sprintf("%dm", podStat.MemoryUsage),
+type newTable func(ctx context.Context, namespace string) (string, error)
+
+func Stats(c client) newTable {
+	return func(ctx context.Context, namespace string) (string, error) {
+		pods, err := c.Pods(ctx, namespace)
+		if err != nil {
+			return "", err
 		}
-		fmt.Println(strings.Join(columns[:], "\t "))
+		podMetrices, err := c.PodMetrices(ctx, namespace)
+		if err != nil {
+			return "", err
+		}
+		return renderTable(extract(pods, podMetrices)), err
 	}
+}
+
+func renderTable(podStats []podStat) string {
+	table := simpletable.New()
+	table.Header = &simpletable.Header{
+		Cells: []*simpletable.Cell{
+			{Align: simpletable.AlignLeft, Text: "Node"},
+			{Align: simpletable.AlignLeft, Text: "Namespace"},
+			{Align: simpletable.AlignLeft, Text: "Pod"},
+			{Align: simpletable.AlignLeft, Text: "CPU (Request)"},
+			{Align: simpletable.AlignLeft, Text: "CPU (Limit)"},
+			{Align: simpletable.AlignLeft, Text: "CPU (Usage)"},
+			{Align: simpletable.AlignLeft, Text: "Memory (Request)"},
+			{Align: simpletable.AlignLeft, Text: "Memory (Limit)"},
+			{Align: simpletable.AlignLeft, Text: "Memory (Usage)"},
+		},
+	}
+	for _, stat := range podStats {
+		row := []*simpletable.Cell{
+			{Align: simpletable.AlignLeft, Text: stat.Node},
+			{Align: simpletable.AlignLeft, Text: stat.Namespace},
+			{Align: simpletable.AlignLeft, Text: stat.Name},
+			{Align: simpletable.AlignLeft, Text: fmt.Sprintf("%dm", stat.CPURequest)},
+			{Align: simpletable.AlignLeft, Text: fmt.Sprintf("%dm", stat.CPULimit)},
+			{Align: simpletable.AlignLeft, Text: fmt.Sprintf("%dm", stat.CPUUsage)},
+			{Align: simpletable.AlignLeft, Text: fmt.Sprintf("%dm", stat.MemoryRequest)},
+			{Align: simpletable.AlignLeft, Text: fmt.Sprintf("%dm", stat.MemoryLimit)},
+			{Align: simpletable.AlignLeft, Text: fmt.Sprintf("%dm", stat.MemoryUsage)},
+		}
+		table.Body.Cells = append(table.Body.Cells, row)
+	}
+	table.SetStyle(simpletable.StyleDefault)
+	return table.String()
 }

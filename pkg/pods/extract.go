@@ -1,12 +1,10 @@
 package pods
 
 import (
-	v1 "k8s.io/api/core/v1"
 	resourcehelper "k8s.io/kubectl/pkg/util/resource"
-	"k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
-type PodStat struct {
+type podStat struct {
 	Node          string
 	Namespace     string
 	Name          string
@@ -18,19 +16,19 @@ type PodStat struct {
 	MemoryUsage   int64
 }
 
-func extract(podList *v1.PodList, podMetricsList *v1beta1.PodMetricsList) []PodStat {
-	podStats := make([]PodStat, 0)
-	for _, podMetrics := range podMetricsList.Items {
-		podStats = append(podStats, transform(podList, podMetrics))
+func extract(pods []pod, podMetrices []podMetrics) []podStat {
+	podStats := make([]podStat, 0)
+	for _, podMetrics := range podMetrices {
+		podStats = append(podStats, transform(pods, podMetrics))
 	}
 	return podStats
 }
 
-func transform(podList *v1.PodList, podMetrics v1beta1.PodMetrics) PodStat {
-	var matchingPod v1.Pod
-	for _, pod := range podList.Items {
-		if pod.Namespace == podMetrics.Namespace && pod.Name == podMetrics.Name {
-			matchingPod = pod
+func transform(pods []pod, metrics podMetrics) podStat {
+	var matchingPod pod
+	for _, it := range pods {
+		if it.Namespace == metrics.Namespace && it.Name == metrics.Name {
+			matchingPod = it
 			break
 		}
 	}
@@ -43,12 +41,12 @@ func transform(podList *v1.PodList, podMetrics v1beta1.PodMetrics) PodStat {
 
 	var cpuUsage int64 = 0
 	var memoryUsage int64 = 0
-	for _, container := range podMetrics.Containers {
+	for _, container := range metrics.Containers {
 		cpuUsage += container.Usage.Cpu().ToDec().MilliValue()
 		memoryUsage += container.Usage.Memory().MilliValue()
 	}
 
-	return PodStat{
+	return podStat{
 		Node:          matchingPod.Spec.NodeName,
 		Namespace:     matchingPod.Namespace,
 		Name:          matchingPod.Name,
