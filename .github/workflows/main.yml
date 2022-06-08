@@ -2,7 +2,10 @@ name: Continuous Integration
 
 on:
   push:
-  workflow-dispatch:
+    branches: main
+
+  pull_request:
+    branches: main
 
 jobs:
   build-test:
